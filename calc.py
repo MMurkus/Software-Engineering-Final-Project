@@ -1,6 +1,7 @@
 import json
 import csv
 import os
+from typing import Union
 import requests
 from datetime import datetime
 import zoneinfo
@@ -11,6 +12,7 @@ API_TOKEN = "7c9a792f46b1b7c63b174cc811c45a6ec439e49d3ab497be5c174636b9382bc5034
 
 PERCENT_OF_FLYERS: float = 0.005
 MARKET_SHARE: float = 0.5
+MIN_MILES: float = 150.0
 
 icao_to_timezone = {
     "KATL": "America/New_York",
@@ -84,21 +86,22 @@ def calculate_distances(airports: dict) -> None:
     ) as f:
         writer = csv.writer(f)
         writer.writerow([""] + list(icao_to_timezone.keys()))
-        for source_airport, *source_airport_coords in airport_coords:
-            distances[source_airport] = [
-                (
-                    round(
-                        great_circle(source_airport_coords, dest_airport_coords).miles,
-                        5,
-                    )
-                    if source_airport != dest_airport
-                    else 0.00
-                )
-                for dest_airport, *dest_airport_coords in airport_coords
-                # Filter by reachable airports (more than 150 miles apart & operates when landing)
-            ]
 
-            writer.writerow([source_airport] + distances[source_airport])
+        for source_airport, *source_airport_coords in airport_coords:
+            row: list[Union[float, str]] = []
+            for dest_airport, *dest_airport_coords in airport_coords:
+                if source_airport == dest_airport:
+                    row.append(0.00)
+                    continue
+
+                miles: float = great_circle(
+                    source_airport_coords, dest_airport_coords
+                ).miles
+
+                row.append(round(miles, 5) if miles >= MIN_MILES else "LESS_THAN_150")
+
+            distances[source_airport] = row
+            writer.writerow([source_airport] + row)
 
 
 def is_reachable_airport(source_coords: tuple, destination_coords): ...
@@ -109,7 +112,7 @@ Format of timezone expected : "America/New_York" | "Europe/Paris"
 """
 
 
-def get_time_of_city(iana_time_zone: str):
+def get_time_of_city(iana_time_zone: str) -> datetime:
     local_timezone = zoneinfo.ZoneInfo(iana_time_zone)
     local_time = datetime.now(local_timezone)
     print(f"Time in ({iana_time_zone.split('\/')[-1]}) : ", end="")
