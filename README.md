@@ -17,8 +17,16 @@
 
 We're using the lastest interpreter python 3.14. This project uses multiple libraries which can be installed below
 
+**Install Dependencies**
+
 ```bash
 python3.14 -m venv .venv
 source .venv/bin/activate
-python -m pip install pytz geopy
+python -m pip install -r requirements.txt
+```
+
+**Deactivate**
+
+```bash
+deactivate
 ```

@@ -5,6 +5,7 @@ from typing import Union
 import requests
 from datetime import datetime
 import zoneinfo
+from collections import defaultdict
 from geopy.distance import great_circle  # type: ignore
 
 # import requests
@@ -48,25 +49,74 @@ icao_to_timezone = {
     "LFPG": "Europe/Paris",  # Charles de Gaulle
 }
 
+icao_to_metro_population: dict[str, float] = {
+    "KATL": 6_300_000,  # Atlanta
+    "KDFW": 7_900_000,  # Dallas–Fort Worth
+    "KDEN": 3_000_000,  # Denver
+    "KORD": 9_500_000,  # Chicago
+    "KLAX": 13_200_000,  # Los Angeles
+    "KJFK": 20_200_000,  # New York City
+    "KCLT": 2_800_000,  # Charlotte
+    "KLAS": 2_300_000,  # Las Vegas
+    "KMCO": 2_700_000,  # Orlando
+    "KMIA": 6_200_000,  # Miami–Fort Lauderdale
+    "KPHX": 5_100_000,  # Phoenix
+    "KSEA": 4_100_000,  # Seattle
+    "KSFO": 7_800_000,  # San Francisco Bay Area
+    "KEWR": 20_200_000,  # NYC metro
+    "KIAH": 7_300_000,  # Houston
+    "KBOS": 5_000_000,  # Boston
+    "KMSP": 3_700_000,  # Minneapolis–St. Paul
+    "KFLL": 6_200_000,  # Miami–Fort Lauderdale
+    "KLGA": 20_200_000,  # NYC metro
+    "KDTW": 4_300_000,  # Detroit
+    "KPHL": 6_200_000,  # Philadelphia
+    "KSLC": 1_300_000,  # Salt Lake City
+    "KBWI": 6_200_000,  # Baltimore–Washington
+    "KIAD": 6_200_000,  # Washington DC metro
+    "KSAN": 3_300_000,  # San Diego
+    "KDCA": 6_200_000,  # Washington DC metro
+    "KTPA": 3_200_000,  # Tampa Bay
+    "KBNA": 2_000_000,  # Nashville
+    "KAUS": 2_400_000,  # Austin
+    "PHNL": 1_000_000,  # Honolulu
+    "LFPG": 13_000_000,  # Paris metro
+}
 
-def main():
+distances: dict[str, dict[str, float]] = {}
+
+
+def main() -> None:
+    load_data()
+    get_total_reachable_airport_populations()
+
+    # for key in icao_to_timezone.values():
+    #     get_time_of_city(key)
+
+
+def load_data() -> None:
     airports = None
-    if os.path.isfile("./airports.json"):
-        with open("airports.json", "r") as f:
+    if os.path.isfile("airports.json"):
+        with open("./airports.json", "r") as f:
             airports = json.load(f)
+            # print(airports)
     else:
         with open("airports.json", "w") as f:
             airports = fetch_airports(list(icao_to_timezone.keys()))
 
-    calculate_distances(airports)
-
-    for key in icao_to_timezone.values():
-        get_time_of_city(key)
+    if os.path.isfile("./distances.json"):  # FIXME: ONLY FIRES IF NOT distances.json
+        with open("./distances.json", "r") as f:
+            distances = json.load(f)
+    else:
+        with open("distances.json", "w") as f:
+            calculate_distances(airports)
 
 
 def calculate_distances(airports: dict) -> None:
-    distances: dict = {}
     airport_coords: list[tuple] = []
+
+    distances_csv: dict = {}
+    distances_json: dict[str, dict[str, float]] = defaultdict(dict)
 
     for airport, airport_data in airports.items():
         icao, latitude, longitude = (
@@ -98,13 +148,19 @@ def calculate_distances(airports: dict) -> None:
                     source_airport_coords, dest_airport_coords
                 ).miles
 
-                row.append(round(miles, 5) if miles >= MIN_MILES else "LESS_THAN_150")
+                row.append(round(miles, 5) if miles >= MIN_MILES else -1.000)
 
-            distances[source_airport] = row
+                distances_json[source_airport][dest_airport] = (
+                    round(miles, 5) if miles >= MIN_MILES else -1.000
+                )
+
+            distances_csv[source_airport] = row
             writer.writerow([source_airport] + row)
 
-
-def is_reachable_airport(source_coords: tuple, destination_coords): ...
+    # TODO: Had werid problems checking with OS path
+    with open("./distances.json", "w") as f:
+        print(distances_json)
+        f.write(json.dumps(distances_json))
 
 
 """
@@ -115,11 +171,16 @@ Format of timezone expected : "America/New_York" | "Europe/Paris"
 def get_time_of_city(iana_time_zone: str) -> datetime:
     local_timezone = zoneinfo.ZoneInfo(iana_time_zone)
     local_time = datetime.now(local_timezone)
-    print(f"Time in ({iana_time_zone.split('\/')[-1]}) : ", end="")
+    print(f"Time in ({iana_time_zone.split('/')[-1]}) : ", end="")
     print(
         local_time.strftime("%Y-%m-%d %H:%M:%S ")
     )  # Could add %Z timezone zone (e.g UTC,EST), %z outputs the UTC Offset
     return local_time
+
+
+def get_total_reachable_airport_populations():
+    for source_airport_name, *dest_airport in distances.items():
+        print(f"{source_airport_name} -> {list(dest_airport.keys())[0]}")
 
 
 def calc_number_of_flyers(
@@ -127,11 +188,29 @@ def calc_number_of_flyers(
     dest_metro_pop: float,
     total_reachable_pop_excluding_source: float,
 ):
-    daily_flyers = source_metro_pop * PERCENT_OF_FLYERS
-    panther_flyers = daily_flyers * MARKET_SHARE
+    flyers: dict = {}
 
-    dest_share = dest_metro_pop / total_reachable_pop_excluding_source
-    return panther_flyers * dest_share
+    with open(
+        "travelers.csv",
+        "w",
+    ) as f:
+        writer = csv.writer(f)
+        writer.writerow([""] + list(icao_to_metro_population.keys()))
+        for source_city, dest_metro_population in icao_to_metro_population.items():
+            row: list[Union[float]] = []
+            for dest_city, dest_metro_population in icao_to_metro_population.items():
+                if source_city == dest_city:
+                    row.append(0.00)
+                    continue
+                else:
+                    daily_flyers = source_metro_pop * PERCENT_OF_FLYERS
+                    panther_flyers = daily_flyers * MARKET_SHARE
+                    dest_share = (
+                        dest_metro_pop / get_total_reachable_airport_populations()
+                    )
+                    return panther_flyers * dest_share
+                    row[source_city] = row
+        writer.writerow([source_city] + row)
 
 
 def fetch_airports(icao_to_timezone: list[str]) -> dict:
