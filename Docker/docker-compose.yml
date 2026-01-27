@@ -7,9 +7,16 @@ services:
     ports:
       - 5432:5432
     env_file:
-      - postgres.env
+      - ./db/postgres.env
+    volumes:
+      - ./db:/docker-entrypoint-initdb.d
+      - postgres_data:/var/lib/postgresql/
   adminer:
     image: adminer
     restart: always
     ports:
       - 8080:8080
+
+volumes:
+  postgres_data:
+    name: postgres_data
