@@ -1,22 +1,20 @@
 import math
-
-# Constants
-NMI_TO_FT: float = 6076.12
+from definitions import NM_TO_FT
 
 
 def knots_to_ft_per_min(knots: float) -> float:
     """Convert speed in knots (nmi/hr) to feet per minute."""
-    return knots * NMI_TO_FT / 60.0
+    return knots * NM_TO_FT / 60.0
 
 
 def nautical_miles_to_feet(nmi: float) -> float:
     """Convert distance in nautical miles to feet."""
-    return nmi * NMI_TO_FT
+    return nmi * NM_TO_FT
 
 
 def feet_to_nautical_miles(feet: float) -> float:
     """Convert distance in feet to nautical miles."""
-    return feet / NMI_TO_FT
+    return feet / NM_TO_FT
 
 
 def minutes_to_hours(minutes: float) -> float:

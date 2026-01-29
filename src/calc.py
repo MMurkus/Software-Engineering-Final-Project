@@ -9,18 +9,7 @@ import zoneinfo
 from collections import defaultdict
 from geopy.distance import great_circle  # type: ignore
 from geographiclib.geodesic import Geodesic
-from definitions import (
-    ANGLE_OF_ASCENSION_IN_DEGREES as ANGLE_OF_ASCENSION_IN_DEGREES,
-    API_TOKEN as API_TOKEN,
-    HUBS as HUBS,
-    KNOTS_TO_FT_PER_MIN as KNOTS_TO_FT_PER_MIN,
-    MARKET_SHARE as MARKET_SHARE,
-    MIN_MILES as MIN_MILES,
-    PERCENT_OF_FLYERS as PERCENT_OF_FLYERS,
-    RATE_OF_DESCEND as RATE_OF_DESCEND,
-    SPEED_IN_KNOTS_TO_DESCEND as SPEED_IN_KNOTS_TO_DESCEND,
-    TURNAROUND_TIME as TURNAROUND_TIME,
-)
+from definitions import *
 from math_utils import (
     NMI_TO_FT as NMI_TO_FT,
     feet_to_nautical_miles as feet_to_nautical_miles,
@@ -380,6 +369,14 @@ def calc_time_to_descend_to_ten_thousand(
         f"Time to descend from {cruising_altitude}ft to 10,000ft : {time_to_descend} minutes"
     )
     return time_to_descend
+
+
+def calc_time_to_crusing(
+    cruising_altitude: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
+):
+    height: float = cruising_altitude - 10_000
+    distance = height / math.sin(math.radians(AIRCRAFT_ASCEND_ANGLE_IN_DEGREES))
+    distance = feet_to_nautical_miles(distance)
 
 
 # print(calc_number_of_flyers(1_000_000, 10_000_000, 175_000_000))
