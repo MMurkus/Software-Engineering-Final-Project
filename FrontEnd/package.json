@@ -1,0 +1,15 @@
+{
+  "name": "frontend",
+  "version": "1.0.0",
+  "description": "",
+  "license": "ISC",
+  "author": "",
+  "type": "commonjs",
+  "main": "index.js",
+  "scripts": {
+    "watch:sass": "sass --watch ./scss/main.scss:./css/style.css"
+  },
+  "devDependencies": {
+    "sass": "^1.97.2"
+  }
+}
