@@ -15,7 +15,7 @@ from definitions import (
     ANGLE_OF_ASCENSION_IN_DEGREES as ANGLE_OF_ASCENSION_IN_DEGREES,
     API_TOKEN as API_TOKEN,
     DISTANCE_IN_NM_TO_10000FT as DISTANCE_IN_NM_TO_10000FT,
-    DISTANCE_TRAVELED_WHILE_ACCEL_TO_280KT as DISTANCE_TRAVELED_WHILE_ACCEL_TO_280KT,
+    DISTANCE_IN_NM_TRAVELED_WHILE_ACCEL_TO_280KT as DISTANCE_IN_NM_TRAVELED_WHILE_ACCEL_TO_280KT,
     HUBS as HUBS,
     ICAO_TO_METRO_POPULATION as ICAO_TO_METRO_POPULATION,
     ICAO_TO_TIMEZONE as ICAO_TO_TIMEZONE,
@@ -158,11 +158,14 @@ def calc_flight_times(
                     row_hms.append("00:00:00")
                     continue
 
-                leg_distance_nm, initial_bearing_deg = geodesic_distance_and_bearing_nm(
-                    airport_coords, source_airport, dest_airport
+                total_distance_nm, initial_bearing_deg = (
+                    geodesic_distance_and_bearing_nm(
+                        airport_coords, source_airport, dest_airport
+                    )
                 )
 
                 must_refuel = False  # TODO: Change
+
                 total_time_min: float = TURNAROUND_TIME + (
                     REFUEL_TIME if must_refuel else 0.0
                 )
@@ -190,7 +193,7 @@ def calc_flight_times(
                 )
 
                 remaining_distance_nm = (
-                    leg_distance_nm
+                    total_distance_nm
                     - climb_distance_nm
                     - accel_dist_nm
                     - descent_dist_nm
@@ -206,9 +209,15 @@ def calc_flight_times(
                 )
 
                 initial_bearing_deg = initial_bearing_deg % 360.0
-                is_westbound = 180.0 <= initial_bearing_deg < 360.0
-                if is_westbound:
-                    total_time_min *= WESTBOUND_TIME_MULTIPLIER
+
+                # IF GREATER THAN 180 (modded) THEN IS_WEST
+                if initial_bearing_deg >= 180.0:
+                    # Get absolute distance between bearing and west
+                    dist_from_west = abs(initial_bearing_deg - 270.0)
+                    percent_west = (
+                        1.00 - dist_from_west / 90.0
+                    )  # If dist_from_west = 0 then percent_west = 1 and multiply multiplers by * else decrease
+                    total_time_min *= WESTBOUND_TIME_MULTIPLIER * percent_west
 
                 total_time_min = round(total_time_min, 2)
 
@@ -231,10 +240,53 @@ def geodesic_distance_and_bearing_nm(
     lat2 = airport_coords[dest_airport]["latitude_deg"]
     lon2 = airport_coords[dest_airport]["longitude_deg"]
 
-    r = Geodesic.WGS84.Inverse(lat1, lon1, lat2, lon2)
-    distance_nm = r["s12"] / METERS_PER_NM
-    bearing_deg = r["azi1"] % 360.0
+    geodesic = Geodesic.WGS84.Inverse(lat1, lon1, lat2, lon2)
+    distance_nm = geodesic["s12"] / METERS_PER_NM
+    bearing_deg = geodesic["azi1"] % 360.0
     return distance_nm, bearing_deg
+
+
+def calc_time_and_distance_cruise_transition(
+    cruising_altitude: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
+    *,
+    direction: Literal["to", "from"],
+) -> tuple[float, float]:
+    height_ft: float = cruising_altitude - 10_000
+
+    if direction == "to":
+        total_distance_nm = feet_to_nautical_miles(
+            height_ft / math.sin(math.radians(AIRCRAFT_ASCEND_ANGLE_IN_DEGREES))
+        )
+        remaining_distance = (
+            total_distance_nm - DISTANCE_IN_NM_TRAVELED_WHILE_ACCEL_TO_280KT
+        )
+
+        return (
+            total_distance_nm,
+            TIME_TO_ACCEL_TO_280KT
+            + remaining_distance / RATE_OF_ASCEND_IN_MIN_AT_280KT,
+        )
+
+    elif direction == "from":
+        # direction == "from" (descent): 3 NM per 1000 ft
+        total_distance_nm = (height_ft / 1000.0) * 3.0
+
+        return (
+            total_distance_nm,
+            total_distance_nm / RATE_OF_ASCEND_IN_MIN_AT_280KT,
+        )
+
+
+def calc_time_and_distance_to_cruising(
+    cruising_altitude: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
+) -> tuple[float, float]:
+    return calc_time_and_distance_cruise_transition(cruising_altitude, direction="to")
+
+
+def calc_time_and_distance_from_cruising(
+    cruising_altitude: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
+) -> tuple[float, float]:
+    return calc_time_and_distance_cruise_transition(cruising_altitude, direction="from")
 
 
 def calc_distances(airport_coords: dict) -> dict:
@@ -398,46 +450,6 @@ def fetch_airports() -> dict:
         airline_data[icao] = request.json()
 
     return airline_data
-
-
-def calc_time_and_distance_cruise_transition(
-    cruising_altitude: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
-    *,
-    direction: Literal["to", "from"],
-) -> tuple[float, float]:
-    height_ft: float = cruising_altitude - 10_000
-
-    if direction == "to":
-        total_distance = feet_to_nautical_miles(
-            height_ft / math.sin(math.radians(AIRCRAFT_ASCEND_ANGLE_IN_DEGREES))
-        )
-        remaining_distance = total_distance - DISTANCE_TRAVELED_WHILE_ACCEL_TO_280KT
-
-        return (
-            total_distance,
-            TIME_TO_ACCEL_TO_280KT
-            + remaining_distance / RATE_OF_ASCEND_IN_MIN_AT_280KT,
-        )
-
-    # direction == "from" (descent): 3 NM per 1000 ft
-    total_distance = (height_ft / 1000.0) * 3.0
-
-    return (
-        total_distance,
-        total_distance / RATE_OF_ASCEND_IN_MIN_AT_280KT,
-    )
-
-
-def calc_time_and_distance_to_cruising(
-    cruising_altitude: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
-) -> tuple[float, float]:
-    return calc_time_and_distance_cruise_transition(cruising_altitude, direction="to")
-
-
-def calc_time_and_distance_from_cruising(
-    cruising_altitude: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
-) -> tuple[float, float]:
-    return calc_time_and_distance_cruise_transition(cruising_altitude, direction="from")
 
 
 if __name__ == "__main__":
