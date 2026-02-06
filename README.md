@@ -4,11 +4,9 @@
 
 - <https://docs.google.com/document/d/1ZOvd7SolPr23Ez89VNYyrGTW5z9p3uFF3Z_z-7HW63I/edit?tab=t.0#heading=h.e69ruzwsk6ia>
 
-**Kanban Boards**
+**Kanban Board**
 
-- Frontend : <https://trello.com/b/CjfwMifZ/software-engineering-sp26>
-- Backend : <https://trello.com/b/chZEFrEe/software-engineering-project-backend>  
-- Math : <https://trello.com/b/k11ydpSG>
+- <https://trello.com/b/CjfwMifZ/software-engineering-sp26>
 
 **Hubs Map**
 
