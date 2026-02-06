@@ -14,13 +14,16 @@ from definitions import (
     AIRCRAFT_ASCEND_ANGLE_IN_DEGREES as AIRCRAFT_ASCEND_ANGLE_IN_DEGREES,
     ANGLE_OF_ASCENSION_IN_DEGREES as ANGLE_OF_ASCENSION_IN_DEGREES,
     API_TOKEN as API_TOKEN,
+    CSV_ROOT as CSV_ROOT,
     DISTANCE_IN_NM_TO_10000FT as DISTANCE_IN_NM_TO_10000FT,
     DISTANCE_IN_NM_TRAVELED_WHILE_ACCEL_TO_280KT as DISTANCE_IN_NM_TRAVELED_WHILE_ACCEL_TO_280KT,
     HUBS as HUBS,
     ICAO_TO_METRO_POPULATION as ICAO_TO_METRO_POPULATION,
     ICAO_TO_TIMEZONE as ICAO_TO_TIMEZONE,
+    JSON_ROOT as JSON_ROOT,
     KNOTS_TO_FT_PER_MIN as KNOTS_TO_FT_PER_MIN,
     MARKET_SHARE as MARKET_SHARE,
+    METERS_PER_NM as METERS_PER_NM,
     MIN_MILES as MIN_MILES,
     PERCENT_OF_FLYERS as PERCENT_OF_FLYERS,
     RATE_OF_ASCEND_IN_MIN_AT_280KT as RATE_OF_ASCEND_IN_MIN_AT_280KT,
@@ -30,12 +33,11 @@ from definitions import (
     SPEED_IN_KNOTS_TO_DESCEND as SPEED_IN_KNOTS_TO_DESCEND,
     TIME_TO_10000FT as TIME_TO_10000FT,
     TIME_TO_ACCEL_TO_280KT as TIME_TO_ACCEL_TO_280KT,
+    TIME_TO_DESCEND_TO_GROUND as TIME_TO_DESCEND_TO_GROUND,
     TIME_TO_LIFTOFF as TIME_TO_LIFTOFF,
     TIME_TO_STOP as TIME_TO_STOP,
     TURNAROUND_TIME as TURNAROUND_TIME,
-    TIME_TO_DESCEND_TO_GROUND as TIME_TO_DESCEND_TO_GROUND,
     WESTBOUND_TIME_MULTIPLIER as WESTBOUND_TIME_MULTIPLIER,
-    METERS_PER_NM as METERS_PER_NM,
 )
 from math_utils import (
     NM_TO_FT as NM_TO_FT,
@@ -55,7 +57,7 @@ def main() -> None:
     HUBS.add("KDFW")
     HUBS.add("KDEN")
 
-    airports = load_data("./JSONs/airports.json", fetch_and_mark_airports)
+    airports = load_data(f"{JSON_ROOT}/airports.json", fetch_and_mark_airports)
     airport_coords: dict[str, dict] = {}
 
     for airport, airport_data in airports.items():
@@ -70,7 +72,7 @@ def main() -> None:
 
         airport_coords[icao] = {"latitude_deg": latitude, "longitude_deg": longitude}
     distances = load_data(
-        "./JSONs/distances.json", lambda: calc_distances(airport_coords)
+        f"{JSON_ROOT}/distances.json", lambda: calc_distances(airport_coords)
     )
 
     calc_number_of_flyers(distances)
@@ -80,7 +82,7 @@ def main() -> None:
 
     get_best_hub_locations()
     taxi_times: dict[str, float] = load_data(
-        "./JSONs/taxi-times.json", lambda: calc_taxi_time(airports)
+        f"{JSON_ROOT}/taxi-times.json", lambda: calc_taxi_time(airports)
     )
     temp_airplane_specs = {"cruising_altitude": 38000, "max_speed": 470}
 
@@ -89,7 +91,7 @@ def main() -> None:
 
 def get_best_hub_locations():
     counts = defaultdict(int)
-    with open("./CSVs/travelers.csv", "r") as f:
+    with open(f"{CSV_ROOT}/travelers.csv", "r") as f:
         counts = defaultdict(int)
         reader = csv.DictReader(f)
         for row in reader:
@@ -99,7 +101,7 @@ def get_best_hub_locations():
                 except ValueError:
                     continue
 
-        with open("./JSONs/hubs.json", "w") as f:
+        with open(f"{JSON_ROOT}/hubs.json", "w") as f:
             json.dump(
                 {
                     city_name: value
@@ -138,8 +140,8 @@ def calc_flight_times(
     airplane_specs: dict,
 ) -> float:
     with (
-        open("./CSVs/times.csv", "w", newline="") as f_min,
-        open("./CSVs/human_times.csv", "w", newline="") as f_hms,
+        open(f"{CSV_ROOT}/times.csv", "w", newline="") as f_min,
+        open(f"{CSV_ROOT}/human_times.csv", "w", newline="") as f_hms,
     ):
         w_min = csv.writer(f_min)
         w_hms = csv.writer(f_hms)
@@ -243,6 +245,7 @@ def geodesic_distance_and_bearing_nm(
     geodesic = Geodesic.WGS84.Inverse(lat1, lon1, lat2, lon2)
     distance_nm = geodesic["s12"] / METERS_PER_NM
     bearing_deg = geodesic["azi1"] % 360.0
+
     return distance_nm, bearing_deg
 
 
@@ -294,7 +297,7 @@ def calc_distances(airport_coords: dict) -> dict:
     distances_json: dict[str, dict[str, float]] = defaultdict(dict)
 
     with open(
-        "./CSVs/distances.csv",
+        f"{CSV_ROOT}/distances.csv",
         "w",
     ) as f:
         # TODO: This should be exported to a func but I'm too lazy
@@ -392,7 +395,7 @@ def calc_number_of_flyers(
     airport_distances: dict[str, dict[str, float]],
 ):
     with open(
-        "./CSVs/travelers.csv",
+        f"{CSV_ROOT}/travelers.csv",
         "w",
     ) as f:
         writer = csv.writer(f)
@@ -439,6 +442,12 @@ def mark_airports_as_hubs(fetched_airports_data: dict) -> dict:
         if icao in HUBS:
             print(f"[+] Marked {icao} as hub")
     return fetched_airports_data
+
+
+def calc_flight_cost(flight_times: dict, airplane_specs: dict) -> dict: ...
+
+
+def calc_profits(flight_costs: dict) -> dict: ...
 
 
 def fetch_airports() -> dict:
