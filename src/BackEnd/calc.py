@@ -17,6 +17,14 @@ from definitions import (
     CSV_ROOT as CSV_ROOT,
     DISTANCE_IN_NM_TO_10000FT as DISTANCE_IN_NM_TO_10000FT,
     DISTANCE_IN_NM_TRAVELED_WHILE_ACCEL_TO_280KT as DISTANCE_IN_NM_TRAVELED_WHILE_ACCEL_TO_280KT,
+    FLIGHT_CRUISING_1500_MILES_IN_FT as FLIGHT_CRUISING_1500_MILES_IN_FT,
+    FLIGHT_CRUISING_INTERNATIONAL_IN_FT as FLIGHT_CRUISING_INTERNATIONAL_IN_FT,
+    FLIGHT_CRUISING_LESS_THAN_1500_MILES_IN_FT as FLIGHT_CRUISING_LESS_THAN_1500_MILES_IN_FT,
+    FLIGHT_CRUISING_LESS_THAN_200_MILES_IN_FT as FLIGHT_CRUISING_LESS_THAN_200_MILES_IN_FT,
+    FLIGHT_CRUISING_LESS_THAN_350_MILES_IN_FT as FLIGHT_CRUISING_LESS_THAN_350_MILES_IN_FT,
+    FR_TAKEOFF_LANDING_FEE_USD as FR_TAKEOFF_LANDING_FEE_USD,
+    FUEL_COST_FR_TO_USD as FUEL_COST_FR_TO_USD,
+    FUEL_COST_USD as FUEL_COST_USD,
     HUBS as HUBS,
     ICAO_TO_METRO_POPULATION as ICAO_TO_METRO_POPULATION,
     ICAO_TO_TIMEZONE as ICAO_TO_TIMEZONE,
@@ -37,8 +45,12 @@ from definitions import (
     TIME_TO_LIFTOFF as TIME_TO_LIFTOFF,
     TIME_TO_STOP as TIME_TO_STOP,
     TURNAROUND_TIME as TURNAROUND_TIME,
+    US_TAKEOFF_LANDING_FEE_USD as US_TAKEOFF_LANDING_FEE_USD,
     WESTBOUND_TIME_MULTIPLIER as WESTBOUND_TIME_MULTIPLIER,
+    os as os,
+    script_dir as script_dir,
 )
+
 from math_utils import (
     NM_TO_FT as NM_TO_FT,
     distance_for_minutes as distance_for_minutes,
@@ -50,24 +62,12 @@ from math_utils import (
     nautical_miles_to_feet as nautical_miles_to_feet,
 )
 
+from classes import Airplane
 
-class Airplane:
-    def __init__(
-        self,
-        name: str,
-        fuel_capacity_gal: float,
-        cruising_altitude_ft: Literal[38_000, 35_000, 30_000, 25_000, 20_000],
-        max_speed_kt: float,
-        fuel_burn_rate_gal_hr: float,
-    ):
-        self.name = name
-        self.fuel_capacity_gal = fuel_capacity_gal
-        self.cruising_altitude_ft = cruising_altitude_ft
-        self.max_speed_kt = max_speed_kt
-        self.fuel_burn_rate_gal_hr = fuel_burn_rate_gal_hr
-
-    def __str__(self):
-        return self.name
+Boeing_737_600 = Airplane("737-600", 6_875, 485, 850, 149)
+Boeing_737_800 = Airplane("737-800", 6_875, 485, 1_050, 189)
+Airbus_A220_100 = Airplane("A220-100", 5_700, 470, 700, 135)
+Airbus_A220_300 = Airplane("A220-300", 5_700, 470, 750, 160)
 
 
 def main() -> None:
@@ -89,6 +89,7 @@ def main() -> None:
             raise ValueError(f"[-] Unable fetch GPS data for {airport}")
 
         airport_coords[icao] = {"latitude_deg": latitude, "longitude_deg": longitude}
+
     distances = load_data(
         f"{JSON_ROOT}/distances.json", lambda: calc_distances(airport_coords)
     )
@@ -99,11 +100,43 @@ def main() -> None:
         get_time_of_city(key)
 
     get_best_hub_locations()
+
     taxi_times: dict[str, float] = load_data(
         f"{JSON_ROOT}/taxi-times.json", lambda: calc_taxi_time(airports)
     )
-    temp_airplnae = Airplane("FAKE", 0, 38_000, 470, 800)
-    calc_flight_times(airport_coords, taxi_times, temp_airplnae)
+
+    Boeing_737_600_flight_times = calc_flight_times(
+        airport_coords, taxi_times, Boeing_737_600, distances
+    )
+    Boeing_737_800_flight_times = calc_flight_times(
+        airport_coords, taxi_times, Boeing_737_800, distances
+    )
+    Airbus_A220_100_flight_times = calc_flight_times(
+        airport_coords, taxi_times, Airbus_A220_100, distances
+    )
+    Airbus_A220_300_flight_times = calc_flight_times(
+        airport_coords, taxi_times, Airbus_A220_300, distances
+    )
+
+    calc_flight_cost_and_fuel_usage(Boeing_737_600_flight_times, Boeing_737_600)
+    calc_flight_cost_and_fuel_usage(Boeing_737_800_flight_times, Boeing_737_800)
+    calc_flight_cost_and_fuel_usage(Airbus_A220_100_flight_times, Airbus_A220_100)
+    calc_flight_cost_and_fuel_usage(Airbus_A220_300_flight_times, Airbus_A220_300)
+
+
+def get_flight_cruising_altitude(
+    source_airport: str, dest_airport: str, distances: dict[str, dict]
+) -> int:
+    distance = distances[source_airport][dest_airport]
+
+    if dest_airport == "LFPG" or source_airport == "LFPG":
+        return FLIGHT_CRUISING_INTERNATIONAL_IN_FT
+    elif distance >= 1_500:  # IDK If this should be great cuz the docs says "of"
+        return FLIGHT_CRUISING_1500_MILES_IN_FT
+    elif distance < 350 and distance >= 200:
+        return FLIGHT_CRUISING_LESS_THAN_350_MILES_IN_FT
+    else:
+        return FLIGHT_CRUISING_LESS_THAN_200_MILES_IN_FT
 
 
 def get_best_hub_locations() -> None:
@@ -154,11 +187,23 @@ def minutes_to_hhmmss(total_minutes: float) -> str:
 def calc_flight_times(
     airport_coords: dict,
     taxi_times: dict,
-    airplane_specs: dict,
-) -> float:
+    airplane_specs: Airplane,
+    distances: dict[str, dict],
+) -> dict[str, dict[str, dict[str, float]]]:
+
+    airport_flight_times: dict[str, dict[str, dict[str, float]]] = {}
+    plane = airplane_specs.name
+    airport_flight_times[plane] = {}
+
     with (
-        open(f"{CSV_ROOT}/times.csv", "w", newline="") as f_min,
-        open(f"{CSV_ROOT}/human_times.csv", "w", newline="") as f_hms,
+        open(
+            f"{CSV_ROOT}/times/decimal/{airplane_specs.name}_times.csv", "w", newline=""
+        ) as f_min,
+        open(
+            f"{CSV_ROOT}/times/human/{airplane_specs.name}_human_times.csv",
+            "w",
+            newline="",
+        ) as f_hms,
     ):
         w_min = csv.writer(f_min)
         w_hms = csv.writer(f_hms)
@@ -168,6 +213,8 @@ def calc_flight_times(
         w_hms.writerow(header)
 
         for source_airport in airport_coords:
+            airport_flight_times[plane][source_airport] = {}
+
             row_min: list[float] = []
             row_hms: list[str] = []
 
@@ -175,8 +222,11 @@ def calc_flight_times(
                 if source_airport == dest_airport:
                     row_min.append(0.0)
                     row_hms.append("00:00:00")
+                    airport_flight_times[plane][source_airport][dest_airport] = 0.0
                     continue
-
+                cruising_altitude: int = get_flight_cruising_altitude(
+                    source_airport, dest_airport, distances
+                )
                 total_distance_nm, initial_bearing_deg = (
                     geodesic_distance_and_bearing_nm(
                         airport_coords, source_airport, dest_airport
@@ -192,23 +242,21 @@ def calc_flight_times(
                 total_time_min += TIME_TO_LIFTOFF + TIME_TO_10000FT
 
                 climb_distance_nm, climb_time_min = calc_time_and_distance_to_cruising(
-                    airplane_specs.cruising_altitude
+                    cruising_altitude
                 )
                 total_time_min += climb_time_min
 
                 descent_dist_nm, descent_time_min = (
-                    calc_time_and_distance_from_cruising(
-                        airplane_specs.cruising_altitude
-                    )
+                    calc_time_and_distance_from_cruising(cruising_altitude)
                 )
 
                 accel_time_min = (
-                    airplane_specs.max_speed - SPEED_IN_KNOTS_AT_CRUISING
+                    airplane_specs.max_speed_kt - SPEED_IN_KNOTS_AT_CRUISING
                 ) / ACCELERATION_RATE_AT_CRUISING
 
                 accel_dist_nm = distance_for_minutes(
                     accel_time_min,
-                    (SPEED_IN_KNOTS_AT_CRUISING + airplane_specs.max_speed) / 2.0,
+                    (SPEED_IN_KNOTS_AT_CRUISING + airplane_specs.max_speed_kt) / 2.0,
                 )
 
                 remaining_distance_nm = (
@@ -219,7 +267,7 @@ def calc_flight_times(
                 )
 
                 cruise_time_min = minutes_for_distance(
-                    remaining_distance_nm, airplane_specs.max_speed * 0.8
+                    remaining_distance_nm, airplane_specs.max_speed_kt * 0.8
                 )
 
                 total_time_min += accel_time_min + cruise_time_min
@@ -227,26 +275,36 @@ def calc_flight_times(
                     descent_time_min + TIME_TO_STOP + taxi_times[dest_airport]
                 )
 
-                initial_bearing_deg = initial_bearing_deg % 360.0
+                initial_bearing_deg %= 360.0
 
-                # IF GREATER THAN 180 (modded) THEN IS_WEST
-                if initial_bearing_deg >= 180.0:
-                    # Get absolute distance between bearing and west
-                    dist_from_west = abs(initial_bearing_deg - 270.0)
-                    percent_west = (
-                        1.00 - dist_from_west / 90.0
-                    )  # If dist_from_west = 0 then percent_west = 1 and multiply multiplers by * else decrease
-                    total_time_min *= WESTBOUND_TIME_MULTIPLIER * percent_west
+                # Get absolute distance between bearing and westO
+                dist_from_west = abs(initial_bearing_deg - 270.0)
+                # Get shortest distance to 270* on either side of the angle
+                dist_from_west = min(dist_from_west, 360.0 - dist_from_west)
+
+                # Invert so 0 distance = 1
+                west_percentage = 1.0 - (dist_from_west / 90.0)
+
+                # If dist_from_west = 0 then west_percentage = 1 and multiply multiplers by * else decrease
+                west_percentage = 0 if west_percentage < 0 else west_percentage
+                west_time_change_multiplier = 1 + (
+                    WESTBOUND_TIME_MULTIPLIER * west_percentage
+                )
+                total_time_min *= west_time_change_multiplier
 
                 total_time_min = round(total_time_min, 2)
 
                 row_min.append(total_time_min)
                 row_hms.append(minutes_to_hhmmss(total_time_min))
 
+                airport_flight_times[plane][source_airport][dest_airport] = (
+                    total_time_min
+                )
+
             w_min.writerow([source_airport] + row_min)
             w_hms.writerow([source_airport] + row_hms)
 
-    return -1.0
+    return airport_flight_times
 
 
 def geodesic_distance_and_bearing_nm(
@@ -407,7 +465,6 @@ def calc_total_reachable_airport_populations(
     return populations_counter
 
 
-# TODO: Make return in JSON format like with distances but our get_best_hubs reads the csv file instead
 def calc_number_of_flyers(
     airport_distances: dict[str, dict[str, float]],
 ):
@@ -462,10 +519,56 @@ def mark_airports_as_hubs(fetched_airports_data: dict) -> dict:
 
 
 def calc_flight_cost_and_fuel_usage(
-    flight_times: dict, airplane_specs: Airplane
+    flight_times_by_airplane: dict, airplane_specs: Airplane
 ) -> dict:
-    runway_fuel_used = airplane_specs.fuel_burn_rate
-    airplane_specs.cruising_altitude
+    with open(
+        f"{CSV_ROOT}/costs/{airplane_specs.name}_costs.csv",
+        "w",
+    ) as f:
+        writer = csv.writer(f)
+        writer.writerow([""] + list(ICAO_TO_METRO_POPULATION.keys()))
+
+        flight_costs = {}
+        for source_airport in flight_times_by_airplane[airplane_specs.name]:
+            flight_costs[source_airport] = {}
+            takeoff_fee = (
+                FR_TAKEOFF_LANDING_FEE_USD
+                if source_airport == "LFPG"
+                else US_TAKEOFF_LANDING_FEE_USD
+            )
+            fuel_price = (
+                FUEL_COST_FR_TO_USD if source_airport == "LFPG" else FUEL_COST_USD
+            )
+
+            row: list[int] = []
+            for dest_airport in flight_times_by_airplane[airplane_specs.name][
+                source_airport
+            ]:
+                if source_airport == dest_airport:
+                    flight_costs[source_airport][dest_airport] = 0.00
+                    row.append(0.00)
+                    continue
+                flight_time_hr = (
+                    flight_times_by_airplane[airplane_specs.name][source_airport][
+                        dest_airport
+                    ]
+                    / 60.0
+                )
+
+                gallons_used = flight_time_hr * airplane_specs.fuel_burn_rate_gal_hr
+                fuel_cost = gallons_used * fuel_price
+
+                landing_fee = (
+                    FR_TAKEOFF_LANDING_FEE_USD
+                    if dest_airport == "LFPG"
+                    else US_TAKEOFF_LANDING_FEE_USD
+                )
+                total_cost = round(fuel_cost + takeoff_fee + landing_fee, 2)
+                flight_costs[source_airport][dest_airport] = total_cost
+                row.append(total_cost)
+            writer.writerow([source_airport] + row)
+
+    return flight_costs
 
 
 def calc_profits(flight_costs: dict) -> dict: ...
