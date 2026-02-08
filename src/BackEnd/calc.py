@@ -14,7 +14,6 @@ from definitions import (
     ACCELERATION_RATE_AT_CRUISING as ACCELERATION_RATE_AT_CRUISING,
     AIRCRAFT_ASCEND_ANGLE_IN_DEGREES as AIRCRAFT_ASCEND_ANGLE_IN_DEGREES,
     AIRCRAFT_MONTHLY_LEASE_COSTS as AIRCRAFT_MONTHLY_LEASE_COSTS,
-    AIRCRAFT_NAMES as AIRCRAFT_NAMES,
     ANGLE_OF_ASCENSION_IN_DEGREES as ANGLE_OF_ASCENSION_IN_DEGREES,
     API_TOKEN as API_TOKEN,
     CSV_ROOT as CSV_ROOT,
@@ -114,18 +113,18 @@ def main() -> None:
     taxi_times: dict[str, float] = load_data(
         f"{JSON_ROOT}/taxi-times.json", lambda: calc_taxi_time(airports)
     )
-    PLANES_BY_NAME = {
+
+    Planes = {
         Boeing_737_600.name: Boeing_737_600,
         Boeing_737_800.name: Boeing_737_800,
         Airbus_A220_100.name: Airbus_A220_100,
         Airbus_A220_300.name: Airbus_A220_300,
     }
+
     flight_times_by_plane: dict[str, dict] = {}
     costs_by_plane: dict[str, dict] = {}
 
-    for plane_name in AIRCRAFT_NAMES:
-        plane = PLANES_BY_NAME[plane_name]
-
+    for plane_name, plane in Planes.items():
         flight_times_by_plane[plane_name] = load_data(
             f"{JSON_ROOT}/flight_times/{plane_name}_flight_times.json",
             lambda plane=plane: calc_flight_times(
@@ -133,8 +132,8 @@ def main() -> None:
             ),
         )
 
-    for plane_name in AIRCRAFT_NAMES:
-        plane = PLANES_BY_NAME[plane_name]
+    for plane_name in Planes:
+        plane = Planes[plane_name]
 
         costs_by_plane[plane_name] = load_data(
             f"{JSON_ROOT}/costs/{plane_name}_costs.json",
@@ -145,6 +144,7 @@ def main() -> None:
 
 
 # DISTANCES
+# https://geographiclib.sourceforge.io/html/python/code.html
 def geodesic_distance_and_bearing_nm(
     airport_coords: dict,
     source_airport: str,
@@ -163,7 +163,6 @@ def geodesic_distance_and_bearing_nm(
 
 
 def calc_distances(airport_coords: dict) -> dict:
-    distances_csv: dict = {}
     distances_json: dict[str, dict[str, float]] = defaultdict(dict)
 
     header = [""] + list(ICAO_TO_TIMEZONE.keys())
@@ -185,15 +184,14 @@ def calc_distances(airport_coords: dict) -> dict:
                 row.append(0.00)
                 continue
 
-            miles: float = (
+            distances_nm: float = (
                 great_circle(source_airport_coords, dest_airport_coords).miles
                 * 0.8689758
             )
-            value = round(miles, 5) if miles >= MIN_MILES else -1.000
+            value = round(distances_nm, 5) if distances_nm >= MIN_MILES else -1.000
             row.append(value)
             distances_json[source_airport][dest_airport] = value
 
-        distances_csv[source_airport] = row
         rows.append([source_airport] + row)
 
     write_to_csv(f"{CSV_ROOT}/distances.csv", header, rows)
@@ -229,7 +227,9 @@ def calc_total_reachable_airport_populations(
         if source_airport_name == dest_airport_name:
             continue
         if nautical_miles >= MIN_MILES:
-            populations_counter += ICAO_TO_METRO_POPULATION[dest_airport_name]
+            populations_counter += ICAO_TO_METRO_POPULATION[
+                dest_airport_name
+            ]  # FIXME: THIS ADDS if greater than min-miles (DOESN'T ACCONUT FOR FUEL)
     print(f"[+] Total Population from {source_airport_name} : {populations_counter}")
 
     return populations_counter
@@ -269,13 +269,13 @@ def calc_number_of_panther_flyers_to_airport(
 
         rows.append([source_city_name] + row)
 
-    write_to_csv(f"{CSV_ROOT}/travelers.csv", header, rows)
+    write_to_csv(f"{CSV_ROOT}/panther-flyers.csv", header, rows)
     return panther_flyers
 
 
 def calc_best_hub_locations() -> None:
     counts = defaultdict(int)
-    with open(f"{CSV_ROOT}/travelers.csv", "r") as f:
+    with open(f"{CSV_ROOT}/panther-flyers.csv", "r") as f:
         counts = defaultdict(int)
         reader = csv.DictReader(f)
         for row in reader:
@@ -324,14 +324,14 @@ def calc_time_and_distance_cruise_transition(
         total_distance_nm = feet_to_nautical_miles(
             height_ft / math.sin(math.radians(AIRCRAFT_ASCEND_ANGLE_IN_DEGREES))
         )
-        remaining_distance = (
+        remaining_distance_nm = (
             total_distance_nm - DISTANCE_IN_NM_TRAVELED_WHILE_ACCEL_TO_280KT
         )
 
         return (
             total_distance_nm,
             TIME_TO_ACCEL_TO_280KT
-            + remaining_distance / RATE_OF_ASCEND_IN_MIN_AT_280KT,
+            + remaining_distance_nm / RATE_OF_ASCEND_IN_MIN_AT_280KT,
         )
 
     elif direction == "from":
@@ -364,8 +364,8 @@ def calc_flight_times(
 ) -> dict[str, dict[str, dict[str, float]]]:
 
     airport_flight_times: dict[str, dict[str, dict[str, float]]] = {}
-    plane = airplane_specs.name
-    airport_flight_times[plane] = {}
+    plane_name = airplane_specs.name
+    airport_flight_times[plane_name] = {}
 
     header = [""] + list(ICAO_TO_TIMEZONE.keys())
 
@@ -373,7 +373,7 @@ def calc_flight_times(
     human_rows: list[list[Union[str, str]]] = []
 
     for source_airport in airport_coords:
-        airport_flight_times[plane][source_airport] = {}
+        airport_flight_times[plane_name][source_airport] = {}
 
         row_min: list[float] = []
         row_hms: list[str] = []
@@ -382,7 +382,7 @@ def calc_flight_times(
             if source_airport == dest_airport:
                 row_min.append(0.0)
                 row_hms.append("00:00:00")
-                airport_flight_times[plane][source_airport][dest_airport] = 0.0
+                airport_flight_times[plane_name][source_airport][dest_airport] = 0.0
                 continue
 
             cruising_altitude: int = get_flight_cruising_altitude(
@@ -446,7 +446,9 @@ def calc_flight_times(
 
             row_min.append(total_time_min)
             row_hms.append(minutes_to_hhmmss(total_time_min))
-            airport_flight_times[plane][source_airport][dest_airport] = total_time_min
+            airport_flight_times[plane_name][source_airport][dest_airport] = (
+                total_time_min
+            )
 
         decimal_rows.append([source_airport] + row_min)
         human_rows.append([source_airport] + row_hms)
