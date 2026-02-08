@@ -109,7 +109,7 @@ def main() -> None:
         f"{JSON_ROOT}/city-current-times.json", get_time_of_cities
     )
 
-    hub_rankings = calc_best_hub_locations
+    hub_rankings = calc_best_hub_locations()
 
     taxi_times: dict[str, float] = load_data(
         f"{JSON_ROOT}/taxi-times.json", lambda: calc_taxi_time(airports)
