@@ -49,7 +49,6 @@ from definitions import (
     TURNAROUND_TIME as TURNAROUND_TIME,
     US_TAKEOFF_LANDING_FEE_USD as US_TAKEOFF_LANDING_FEE_USD,
     WESTBOUND_TIME_MULTIPLIER as WESTBOUND_TIME_MULTIPLIER,
-    os as os,
     script_dir as script_dir,
 )
 
@@ -65,13 +64,16 @@ from math_utils import (
 )
 
 from classes import Airplane
-
+from args import get_args
 
 # AIRCRAFT
 Boeing_737_600 = Airplane("737-600", 6_875, 485, 850, 149)
 Boeing_737_800 = Airplane("737-800", 6_875, 485, 1_050, 189)
 Airbus_A220_100 = Airplane("A220-100", 5_700, 470, 700, 135)
 Airbus_A220_300 = Airplane("A220-300", 5_700, 470, 750, 160)
+
+
+program_args = get_args()
 
 
 # MAIN
@@ -534,9 +536,20 @@ def load_data(
     build_func: Callable[[], dict],
     post_processs_func: Optional[Callable[[], Any]] = None,
 ) -> dict:
-    if os.path.isfile(filename):
+    if (
+        os.path.isfile(filename)
+        and not program_args.overwrite
+        or "airports.json" in filename
+    ):
+        print(f"[-] Overwriting Disabled, for file {filename.split('/')[-1]}")
         with open(filename, "r") as f:
             return json.load(f)
+    message = (
+        f"[+] Overwriting Enabled, overwriteing {filename.split('/')[-1]}"
+        if program_args.overwrite
+        else f"[+] Writing {filename}"
+    )
+    print(message)
     data: dict = build_func()
     write_to_json(filename, data)
     if post_processs_func is not None:
