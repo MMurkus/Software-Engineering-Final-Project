@@ -1,13 +1,10 @@
 from fastapi import FastAPI
 import json
 import os
-import sys
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-target_dir = os.path.join(script_dir, "..", "../Calcs")
-sys.path.append(target_dir)
+app = FastAPI()
 
-from definitions import JSON_ROOT
+from BackEnd.PythonCalcs.definitions import JSON_ROOT
 
 
 def get_json_file_data(filename: str) -> dict:
@@ -15,9 +12,6 @@ def get_json_file_data(filename: str) -> dict:
         return json.load({})
     with open(filename, "r") as f:
         return json.load(f)
-
-
-app = FastAPI()
 
 
 @app.get("/test")

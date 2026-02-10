@@ -4,7 +4,6 @@ import os
 script_dir = os.path.dirname(os.path.realpath(__file__))
 print(script_dir)
 
-"../../../JSONs"
 ""
 CSV_ROOT = f"{script_dir}/../../../CSVs"
 JSON_ROOT = f"{script_dir}/../../../JSONs"

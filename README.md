@@ -27,8 +27,10 @@ python3.14 -m pip install -r ./src/requirements.txt
 **Start API Server**
 
 ```bash
-fastapi run dev
+fastapi dev server.py 
 ```
+
+Access docs via the `/docs` endpoint
 
 **Deactivate**
 
