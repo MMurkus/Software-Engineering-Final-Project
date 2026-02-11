@@ -1,5 +1,10 @@
 .table--container{
     display: flex;
-    align-items: start;
+}
 
+table{
+    table-layout: fixed;
+    width: 90%;
+    margin: 10px auto;
+    border-collapse: collapse;
 }
