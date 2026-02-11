@@ -522,7 +522,9 @@ def calc_flight_cost_and_fuel_usage(
 
         rows.append([source_airport] + row)
 
-    write_to_csv(f"{CSV_ROOT}/costs/{airplane_specs.name}_costs.csv", header, rows)
+    write_to_csv(
+        f"{CSV_ROOT}/costs/{airplane_specs.name}_flight_costs.csv", header, rows
+    )
     return flight_costs
 
 
